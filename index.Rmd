@@ -1,0 +1,303 @@
+---
+title: "JRB's Yoga"
+author: "JRB"
+date: "`r Sys.Date()`"
+
+
+output: 
+  html_document:
+  flexdashboard::flex_dashboard:
+    name: "jrb_yoga"
+    output_dir: docs
+    theme:
+      #version: 4
+      bg: "#484848"
+      fg: "#FDF7F7" 
+      primary: "#484848"
+      navbar-bg: "#2e4263"
+      base_font: 
+        google: Prompt
+      heading_font:
+        google: Sen
+      code_font:
+        google: 
+          # arguments to sass::font_google() 
+          family: JetBrains Mono
+          local: false
+    vertical_layout: scroll
+runtime: shiny
+
+---
+
+```{r global, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = F)
+
+library(flexdashboard)
+library(readr)
+library(leaflet)
+library(DT)
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(ggplot2)
+library(knitr)
+library(shiny)
+library(DT)
+library(wesanderson)
+library(ggmap)
+library(tidyr)
+library(dplyr)
+library(sp)
+library(rgdal)
+library(jsonlite)
+library(maptools)
+library(ggthemes)
+library(scales)
+library(MASS)
+library(viridis)
+library(reshape2)
+library(RColorBrewer)
+library(leaflet.extras)
+library(raster)
+library(RColorBrewer)
+library(leaflet.esri)
+library(tigris)
+library(hrbrthemes)
+
+yoga <-
+  read.csv(
+    "/Users/jrb/Desktop/R/yoga.csv",
+    row.names = NULL,
+    sep = ","
+  )
+
+# format variables:
+yoga$watch_time <- hms(yoga$watch_time, quiet = T)
+yoga$hour <- hms("01:00:00", quiet = T)
+yoga$hour_calories <- (yoga$calories * yoga$hour)/yoga$watch_time
+yoga$date <- mdy(yoga$date)
+yoga$day <- as.factor(yoga$day)
+yoga$day <- factor(yoga$day, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+yoga$time <- as.factor(yoga$time)
+yoga$month_year <- format(as.Date(yoga$date), "%Y-%m")
+yoga$Teacher <- gsub(" .*", "", yoga$teacher)
+
+# event variables:
+covid_width <- as.numeric(difftime(ymd("2022-01-14"), ymd("2021-12-27"), units = "days"))
+surgery_width = as.numeric(difftime(ymd("2022-06-15"), ymd("2022_05_13"), units = "days"))
+
+```
+
+### Average Total Classes Heart Rate by Teacher: shape-size increases by number of classes with a teacher
+    
+```{r, fig.width= 14, fig.height= 8, warning=FALSE}
+# average lifetime heart rate by teacher:
+yoga %>%
+  drop_na(avg_heart_rate) %>%
+  group_by(Teacher) %>%
+  mutate(teacher_count = length(Teacher)) %>%
+  mutate(avg_heart = mean(avg_heart_rate)) %>%
+  distinct(Teacher, .keep_all = T) %>%
+  ggplot(
+  aes(
+    x = Teacher,
+    y = avg_heart,
+    label = avg_heart,
+    fill = hour_calories,
+    size = teacher_count
+  )
+) +
+  coord_flip() +
+  geom_point(alpha=0.85, shape=22, color="black", aes(size = teacher_count), fill = "#277F8EFF") +
+  scale_size(range = c(5, 30)) +
+  #scale_fill_viridis(discrete=F, guide="none", option="G") +
+    theme_ipsum(grid = F) +
+  theme(legend.position="none", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe")) +
+  ylab("Average Heart Rate") +
+  xlab("Teacher") +
+  theme(plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10))
+```
+    
+### Individual Class Calories by Teacher: shape-size increases with class average heart rate
+
+```{r, fig.width= 14, fig.height= 8, warning=FALSE}
+# Individual class calories per hour by teacher:
+yoga %>%
+  arrange(desc(hour_calories)) %>%
+  ggplot(aes(
+    x = hour_calories,
+    y = Teacher,
+    size = avg_heart_rate,
+    fill = avg_heart_rate
+  )) +
+  geom_point(alpha = 0.5,
+             shape = 21,
+             color = "black") +
+  scale_size(range = c(.1, 20)) +
+  scale_fill_viridis(discrete = F,
+                     guide = "none",
+                     option = "A") +
+  theme_ipsum(grid = F) +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_text(colour = "#bebebe") ,
+    axis.title.y = element_text(colour = "#bebebe")
+  ) +
+  ylab("Teacher") +
+  xlab("Calories per Hour") +
+  theme(
+    plot.background = element_rect(fill = "#484848"),
+    axis.text.x = element_text(
+      angle = 90,
+      vjust = 1,
+      hjust = 1,
+      color = "#BEBEBE"
+    ),
+    axis.text.y = element_text(color = "#BEBEBE"),
+    legend.text = element_text(colour = "#BEBEBE", size = 10)
+  )
+```
+
+### Heart Rate by Individual Class
+
+```{r, eval=T, fig.width= 14, fig.height= 8, warning=FALSE}
+# Calories per class by individual date:
+ggplot(
+  data = yoga,
+  aes(
+    x = date,
+    y = avg_heart_rate,
+    label = avg_heart_rate,
+    fill = avg_heart_rate
+    #size = hour_calories
+  )
+) +
+  # centering over start date:
+  #geom_vline(xintercept = (ymd("2021-12-27") + (.5*covid_width)), lwd = covid_width, colour = "grey", alpha = .1) +
+  geom_vline(xintercept = (ymd("2021-12-27") + (.5*covid_width)), lwd = 1, colour = "#c0369d", alpha = .7) +
+  annotate("text", x=ymd("2021-12-27") + (.5*covid_width), y=90, label="COVID Diagnosis", angle=90, color = "white") +
+  geom_vline(xintercept = (ymd("2022-05-13") + (.5*surgery_width)), lwd = surgery_width, colour = "grey", alpha = .1) +
+  annotate("text", x=ymd("2022-05-13") + (.5*surgery_width), y=90, label="Wrist Surgeries", angle=90, color = "white") +
+  geom_point(alpha=0.5, shape=21, color="black", size = 10) +
+  #geom_smooth(method=lm, se=FALSE, color = "#C0369D", alpha = .7) +
+  #scale_size(range = c(2, 10)) +
+  scale_y_continuous(limits = c(80, 130)) +
+  scale_fill_viridis(discrete=F,  option="A") +
+  theme_ipsum(grid = F) +
+  theme(legend.position="none", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe")) +
+  ylab("Class Average Heart Rate") +
+  xlab("Date") +
+  theme(plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10)) 
+```
+
+### Calories by Individual Class
+
+```{r, eval=T, fig.width= 14, fig.height= 8, warning=FALSE}
+# Calories per class by individual date:
+ggplot(
+  data = yoga,
+  aes(
+    x = date,
+    y = hour_calories,
+    label = hour_calories,
+    fill = hour_calories
+    #size = hour_calories
+  )
+) +
+  # centering over start date:
+  geom_vline(xintercept = (ymd("2021-12-27") + (.5*covid_width)), lwd = 1, colour = "#c0369d", alpha = .7) +
+  annotate("text", x=ymd("2021-12-27") + (.5*covid_width), y=130, label="COVID Diagnosis", angle=90, color = "white") +
+  geom_vline(xintercept = (ymd("2022-05-13") + (.5*surgery_width)), lwd = surgery_width, colour = "grey", alpha = .1) +
+  annotate("text", x=ymd("2022-05-13") + (.5*surgery_width), y=130, label="Wrist Surgeries", angle=90, color = "white") +
+  #geom_smooth(method=lm, se=FALSE, color = "#C0369D", alpha = .5) +
+  geom_point(alpha=0.5, shape=21, color="black", size = 10) +
+  #scale_size(range = c(2, 10)) +
+  scale_y_continuous(limits = c(85, 320)) +
+  scale_fill_viridis(discrete=F,  option="A") +
+  theme_ipsum(grid = F) +
+  theme(legend.position="none", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe")) +
+  ylab("Calories") +
+  xlab("Date") +
+  theme(plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10)) 
+```
+
+### Calories by Days of the Week: shape-size increases for count of classes that weekday
+
+```{r, eval=T, fig.width= 14, fig.height= 8, warning=FALSE}
+# days of the week:
+yoga %>%
+  drop_na(avg_heart_rate) %>%
+  group_by(day) %>%
+  mutate(Average_Heart_Rate_Day = mean(avg_heart_rate)) %>%
+  mutate(Average_Calories_day = mean(hour_calories)) %>%
+  mutate(day_count = length(day)) %>%
+  distinct(day, .keep_all = T) %>%
+  ggplot(
+  aes(
+    x = day,
+    y = Average_Calories_day,
+    label = Average_Calories_day,
+    fill = Average_Calories_day,
+    size = day_count,
+  )
+) +
+  geom_point(shape=22, color="black", fill = "#277F8EFF") +
+  scale_size(range = c(5, 30)) +
+  #scale_fill_viridis(discrete=F,  option="G") +
+  theme_ipsum(grid = F) +
+  theme(legend.position="none", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe")) +
+  ylab("Average Calories/Hour by Day") +
+  xlab("Day") +
+  theme(plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10)) 
+```
+
+### Average Heart Rate per Month: shape-size increases for number of classes that month
+
+```{r, eval=T, fig.width= 14, fig.height= 8, warning=FALSE}
+# Average class calories per month:
+yoga %>%
+  drop_na(avg_heart_rate) %>%
+  group_by(month_year) %>%
+  mutate(month_avg_heart = mean(avg_heart_rate)) %>%
+  mutate(Count = length(month_year)) %>%
+  distinct(month_year, .keep_all = T) %>%
+  ggplot(
+    aes(
+    x = month_year,
+    y = month_avg_heart,
+    fill = month_avg_heart,
+    size = Count
+  )) +
+  # make this month_year, not ymd:
+  #geom_vline(xintercept = (ymd("2021-12-27") + (.5*covid_width)), lwd = 1, colour = "#c0369d", alpha = .7) +
+  #annotate("text", x=ymd("2021-12-27") + (.5*covid_width), y=90, label="COVID Diagnosis", angle=90, color = "white") +
+  geom_point(shape=21, color="black") +
+  scale_size(range = c(5, 25)) +
+  scale_fill_viridis(discrete=F,  option="G", guide = "none") +
+  theme_ipsum(grid = F) +
+  theme(legend.position="none", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe")) +
+  ylab("Average Calories/Hour") +
+  xlab("Date") +
+  theme(plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10)) 
+```
+
+### Class Calories by Class Average Heart Rate
+
+```{r, eval=T, fig.width= 14, fig.height= 8, warning=FALSE, message=FALSE}
+ggplot(
+  data = yoga
+) +
+  #calories:
+  geom_point(aes(x = date, y = hour_calories, fill = "#C7C07A"), shape = 21, size = 10, alpha = .5) +
+  geom_smooth(aes(x = date, y = hour_calories, fill = "#C7C07A"), method=lm, se=FALSE, alpha = .5) +
+  # heart rate:
+  geom_point(aes(x = date, y = avg_heart_rate, fill = "#69A1B4"), shape = 21, size = 10, alpha = .5) +
+  geom_smooth(aes(x = date, y = avg_heart_rate, fill = "#69A1B4"), method=lm, se=FALSE, alpha = .5) +
+  theme_ipsum(grid = F) +
+  theme(legend.position="bottom", axis.title.x=element_text(colour="#bebebe") , axis.title.y=element_text(colour="#bebebe"), plot.background = element_rect(fill = "#484848"), axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, color = "#BEBEBE"), axis.text.y = element_text(color = "#BEBEBE"), legend.text = element_text(colour="#BEBEBE", size = 10)) +
+  xlab("Date") +
+  ylab("Heart Rate / Calories") +
+  scale_fill_manual(values = c("#C7C07A", "#69A1B4"), labels = c("Heart Rate", "Calories")) +
+  guides(fill=guide_legend(title=""))
+
+```
