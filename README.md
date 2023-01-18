@@ -1,4 +1,2 @@
 # JRB's Yoga
-A line I wrote on my local computer  
-A line I wrote on my local computer  
-A line I wrote on my local computer  
+A dashboard keeping track of my yoga data
